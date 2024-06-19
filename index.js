@@ -4,6 +4,7 @@ import pkg from 'pg';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import path from 'path';
+
 const { Pool } = pkg;
 
 const __filename = fileURLToPath(import.meta.url);
@@ -23,7 +24,6 @@ const pool = new Pool({
   port: process.env.DB_PORT,
 });
 
-// Rutas de la API
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
@@ -52,8 +52,9 @@ app.get('/usuarios', async (req, res) => {
   }
 });
 
-app.put('/usuario', async (req, res) => {
-  const { id, nombre, balance } = req.body;
+app.put('/usuario/:id', async (req, res) => {  
+  const { id } = req.params; 
+  const { nombre, balance } = req.body;
   try {
     const result = await pool.query(
       'UPDATE usuarios SET nombre = $1, balance = $2 WHERE id = $3 RETURNING *',
@@ -66,8 +67,8 @@ app.put('/usuario', async (req, res) => {
   }
 });
 
-app.delete('/usuario', async (req, res) => {
-  const { id } = req.query;
+app.delete('/usuario/:id', async (req, res) => { 
+  const { id } = req.params; 
   try {
     const result = await pool.query(
       'DELETE FROM usuarios WHERE id = $1 RETURNING *',
@@ -84,18 +85,30 @@ app.post('/transferencia', async (req, res) => {
   const { emisor, receptor, monto } = req.body;
   try {
     await pool.query('BEGIN');
+
     const emisorResult = await pool.query(
       'UPDATE usuarios SET balance = balance - $1 WHERE id = $2 RETURNING *',
       [monto, emisor]
     );
+
+    if (emisorResult.rowCount === 0) {
+      throw new Error('Emisor no encontrado');
+    }
+
     const receptorResult = await pool.query(
       'UPDATE usuarios SET balance = balance + $1 WHERE id = $2 RETURNING *',
       [monto, receptor]
     );
+
+    if (receptorResult.rowCount === 0) {
+      throw new Error('Receptor no encontrado');
+    }
+
     const transferenciaResult = await pool.query(
       'INSERT INTO transferencias (emisor, receptor, monto) VALUES ($1, $2, $3) RETURNING *',
       [emisor, receptor, monto]
     );
+
     await pool.query('COMMIT');
     res.status(201).json(transferenciaResult.rows[0]);
   } catch (error) {
